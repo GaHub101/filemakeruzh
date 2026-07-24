@@ -89,8 +89,12 @@ Navigationsdrehscheibe zwischen den Behandlungsphasen (`zur Reevaluation`,
 | `toothsizeanalysis moyers` | tooth size analysis, Tabelle - Info, + `sh`-Varianten |
 | `Interim Finale` | Layout-#1, Interim sh |
 
-Das Suffix `sh` markiert durchgehend eine zweite Layoutvariante je Zweck
-(vermutlich für die gehostete/geteilte Nutzung).
+Fast jede Datei hat zu ihrem Hauptlayout ein zweites mit dem Suffix ` sh`.
+**Wofür `sh` steht, ist ungeklärt** — in den Dateien findet sich kein Hinweis
+darauf. Dasselbe Kürzel taucht auch auf Dateiebene auf (`Stammdaten_shr.fp7`
+im Konvertierungs-Log, Verzeichnis `2013_filemaker_shr_restliche_dokumente`),
+was gegen eine rein layoutbezogene Bedeutung spricht. Vor einer Umstrukturierung
+in der Praxis klären.
 
 ## Fachliche Feldstruktur (Auszug)
 
