@@ -14,6 +14,10 @@ compiled or executed outside of FileMaker Pro / FileMaker Server.
 - `docs/FILEMAKER_ARCHITEKTUR.md` — architecture analysis (German), based on
   the FileMaker Pro 19 Database Design Report (DDR) covering 29 files. Read
   this before reasoning about how the files relate.
+- `docs/NEUBAU_DATENMODELL.md` — design spec (German) for the planned rebuild:
+  target tables, field-by-field carry-over, record-creation scripts. Scope was
+  cut from 29 files to 6 modules; treatment phase becomes a `Sequenz` field on
+  a new `Untersuchung` table instead of separate files. No data migration.
 - The actual `.fmp12` database files are **not committed** — they are
   extracted locally under `_Filemaker_Interim/` and excluded via
   `.gitignore`, because they contain real patient data. Do not add them to
