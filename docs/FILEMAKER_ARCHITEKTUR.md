@@ -1,135 +1,148 @@
 # FileMaker-Lösung — Architekturanalyse
 
-Analyse des Dateiverbunds, rekonstruiert direkt aus den `.fmp12`-Binärdateien.
-Ersetzt die frühere, aus dem Konvertierungs-Log von 2004 abgeleitete Vermutung.
+Grundlage: **Datenbank-Design-Bericht (DDR)** aus FileMaker Pro 19, XML-Export
+vom 25.07.2026, 29 Dateien. Damit sind Beziehungen, Match-Felder und
+Berechnungsformeln belegt statt erschlossen.
 
-## Analysemethode
+Ablageort laut DDR: `M:\_Filemaker_UL\` — alle Dateien liegen im selben
+Verzeichnis auf einem gemappten Laufwerk.
 
-FileMaker legt Bezeichner in `.fmp12` **XOR-0x5A-verschleiert** ab — deshalb
-findet ein normaler Textscan nichts. Nach dem Umkehren dieser Verschleierung
-liegen die Bezeichner als **längen-präfixierte Strings** vor: ein Längenbyte
-(ebenfalls XOR 0x5A), dann der Name in Latin-1.
+## Kernbefund: Der Verbund entstand durch Dateiduplikation
 
-Die Kategorie ergibt sich aus den Markerbytes direkt davor:
+Die 29 Dateien gehen auf rund **9 Schema-Linien** zurück. Der Beleg steht in
+den Basistabellennamen — beim Duplizieren einer Datei wandert der alte
+Tabellenname mit:
 
-| Marker (entschlüsselt) | Inhalt |
+| Datei | Basistabelle | Felder |
+|---|---|---|
+| `Behandlung.fmp12` | **Konzeptblatt** | 112 |
+| `Reevaluation.fmp12` | **Konzeptblatt** | 108 |
+| `Konzeptblatt 2.fmp12` | **Konzeptblatt** | 108 |
+| `Modelle.fmp12` | **Platzanalyse** | 7 |
+| `Photo.fmp12` | **Platzanalyse** | 61 |
+| `Röntgenbild.fmp12` | **Platzanalyse** | 10 |
+| `Platzanalyse Konzept 2/ZWUL 1/ZWUL 2` | **Platzanalyse** | 111 / 131 / 131 |
+
+`Photo`, `Modelle` und `Röntgenbild` sind also keine eigens entworfenen Module,
+sondern ausgeräumte Platzanalyse-Klone. `Bolton` stammt ebenfalls von
+Platzanalyse ab, hat die Basistabelle aber umbenannt und ist inzwischen
+divergiert (175 Felder / 56 Berechnungen gegenüber 131 / 61).
+
+### Vollständig redundante Dateien (identischer Feldsatz)
+
+| Gruppe | Felder |
 |---|---|
-| `da 5c 5b` | Feldnamen und Layout-Beschriftungen |
-| `da 5c 4a` | Externe Dateiverweise, danach Scriptnamen |
-| `5a 5c 4a` | Layoutnamen (vermischt mit Schriftarten-/Menü-Katalog) |
+| `Platzanalyse` = `Platzanalyse ZWUL 1` = `Platzanalyse ZWUL 2` | 131 |
+| `toothsizeanalysis moyers` = `… Konzept 2` = `… Reevaluation` = `… seipel` | 146 |
+| `Etiketten` = `Etiketten_sto` | 128 |
+| `Konzeptblatt 2` = `Reevaluation` | 108 |
+| `kvBlatt Konzept 2` = `kvBlatt Reevaluation` | 108 |
+| `paAnalyse Konzept 2` = `paAnalyse Reevaluation` | 19 |
+| `Behandlung` = `Termine` | 112 |
 
-Der Block der externen Dateiverweise endet jeweils mit dem Selbstverweis
-`Files/<Dateiname>/`; alles danach sind Scriptnamen. Dieses Muster ist über
-alle untersuchten Dateien konsistent.
+Bemerkenswert: `toothsizeanalysis seipel` hat denselben Feldsatz wie die
+Moyers-Variante — die beiden Analyseverfahren unterscheiden sich also nicht im
+Schema, sondern nur in den hinterlegten Referenzwerten.
 
 ## Verknüpfungsschlüssel
 
-Alle acht untersuchten Dateien enthalten ein Feld **`KG Nr.`**
-(Krankengeschichte-Nummer, in Varianten `KG Nr`, `KG Nr:`, `KG.Nr:`). Das ist
-der gemeinsame Patientenschlüssel, über den der Verbund zusammenhängt.
-`Stammdaten` führt zusätzlich `Befundnummer` und `Konzept Nr.` als eigene
-Ordnungsnummern.
+**`KG Nr` verbindet praktisch alles.** Von 190 Join-Prädikaten im gesamten
+Verbund nutzen 184 dieses Feld. Sämtliche Beziehungen sind vom Typ `Equal`.
 
-## Dateibeziehungen (verifiziert)
+Zwei Fallstricke:
 
-### Stammdaten.fmp12 — Hub
+- **Schreibweise uneinheitlich:** `Konzeptblatt`, `Reevaluation`, `Termine` und
+  `Behandlung` nennen das Feld `KG nr` (kleines n), alle übrigen `KG Nr`. Für
+  jede Migration oder API-Anbindung relevant, da Feldnamen unterschieden werden.
+- **Einzige inhaltlich andere Beziehung:**
+  `kvBlatt.KV zu anderem Konzept = Konzeptblatt.Nummer Beh. Konzept` — verknüpft
+  einen Kostenvoranschlag mit einem bestimmten Behandlungskonzept statt mit dem
+  Patienten. Existiert in allen drei kvBlatt-Varianten.
 
-Referenziert als einzige Datei praktisch den gesamten Verbund inklusive aller
-Behandlungsphasen-Varianten:
+In `Stammdaten` ist `KG Nr` als eindeutig und nicht leer validiert.
 
-Befundblatt · Konzeptblatt · kvBlatt · paAnalyse · Platzanalyse · Photos ·
-Interim Finale · Reevaluation · Konzeptblatt 2 · Befundblatt Konzept 2 ·
-Befundblatt Reevaluation · Platzanalyse Konzept 2 · Platzanalyse Reevaluation ·
-paAnalyse Konzept 2 · paAnalyse Reevaluation · kvBlatt Konzept 2 ·
-kvBlatt Reevaluation · eine personalisierte Interim-Finale-Variante
+## Beziehungsstruktur
 
-### Fachblatt-Dateien
+`Stammdaten` ist der Hub mit 19 Tabellenvorkommen und 16 Beziehungen — mehr als
+doppelt so viele wie jede andere Datei. Von dort geht je eine `KG Nr`-Beziehung
+zu jeder Fachdatei und zu jeder Phasenvariante.
 
-| Datei | Externe Dateiverweise |
+Die Fachdateien sind zusätzlich **untereinander** vernetzt: Jede referenziert
+typischerweise Stammdaten, Befundblatt, Konzeptblatt, kvBlatt, paAnalyse und
+Platzanalyse. Es ist ein weitgehend vollvermaschtes Netz, keine Sternstruktur.
+
+`Interim Finale.fmp12` ist die einzige Datei **ohne jede Beziehung** — 1
+Tabellenvorkommen, 0 Relationen, keine externen Datenquellen.
+
+## Defekte
+
+### Drei kaputte Beziehungen
+
+Das rechte Match-Feld fehlt, die Beziehung greift also nicht:
+
+| Datei | Beziehung |
 |---|---|
-| `Befundblatt` | Stammdaten, Konzeptblatt, paAnalyse, Platzanalyse, kvBlatt, Etiketten |
-| `Konzeptblatt` | Stammdaten, Befundblatt, kvBlatt, Platzanalyse, paAnalyse + sämtliche `Konzept 2`-/`Reevaluation`-Varianten |
-| `Platzanalyse` | Stammdaten, Befundblatt, Konzeptblatt, kvBlatt, paAnalyse, toothsizeanalysis moyers, toothsizeanalysis seipel, Eticketten (I/II/IV) |
-| `paAnalyse` | Stammdaten, Befundblatt, Konzeptblatt, kvBlatt, Platzanalyse |
-| `toothsizeanalysis moyers` | Stammdaten, Befundblatt, Konzeptblatt, kvBlatt, paAnalyse, Platzanalyse |
-| `Bolton` | identisch mit Platzanalyse — siehe unten |
-| `Interim Finale` | **keine** — eigenständig |
+| `Stammdaten` | `Stammdaten.KG Nr` → `Befundblatt Reevaluation.???` |
+| `Stammdaten` | `Stammdaten.KG Nr` → `Platzanalyse Reevaluation.???` |
+| `Behandlung` | `Konzeptblatt.KG nr` → `Konzeptblatt 2.???` |
 
-### Zwei Korrekturen gegenüber der Log-Rekonstruktion
+### Zehn Verweise auf nicht existierende Dateien
 
-- **`Bolton.fmp12` ist ein Duplikat von `Platzanalyse.fmp12`.** Die Datei gibt
-  ihren eigenen internen Pfad als `Files/Platzanalyse/` an und hat denselben
-  Feld- und Scriptbestand. Es ist keine eigenständige Analysedatei, sondern
-  eine abgespaltene Kopie.
-- **`Interim Finale.fmp12` ist tatsächlich eigenständig** — bestätigt, keine
-  externen Datenquellen, nur 5 Scripts.
+`Befundblatt Reevaluation` · `Befundblatt Reevaluation 2` · `Befundblatt ZWUL 1` ·
+`Befundblatt ZWUL 2` · `Platzanalyse Reevaluation` · `Platzanalyse Konzept 3` ·
+`toothsizeanalysis moyers Konzept 3` · `Eticketten` · `Etticketten II` ·
+`Eticketten IV`
 
-## Navigationsmuster
+Teils Altlasten, teils Tippfehler (`Etticketten`), teils Dateien, die es nie gab
+(`Konzept 3`). Vor dem Hosting bereinigen — sonst erzeugen sie beim Öffnen
+„Datei suchen"-Dialoge.
 
-Der Verbund wird nicht über Beziehungen allein zusammengehalten, sondern über
-Sprung-Scripts. Jede Fachdatei enthält eine gleichförmige Serie
-(`zu den Stammdaten`, `zum Befundblatt`, `zum Konzeptblatt`, `zum KV-Blatt`,
-`zum PA Analyseblatt`, `zur Platzanalyse`, `Finden in <Datei>`).
+### `Interim Finale.fmp12` ist ein Ausreisser
 
-`Konzeptblatt` hat mit 61 Scripts den grössten Bestand und fungiert als
-Navigationsdrehscheibe zwischen den Behandlungsphasen (`zur Reevaluation`,
-`zum befundblatt Konzept 2`, `gehe zu Platz&Bolton Reevaluation` usw.).
-`Stammdaten` folgt mit 44 Scripts.
+**794 Felder, 408 Berechnungen** — mit Abstand die komplexeste Datei des
+Verbunds, bei nur 3 Scripts, 2 Layouts und null Beziehungen. Eine vollständig
+denormalisierte Einzeltabelle: alles, was auf dem Blatt erscheint, ist ein
+eigenes Feld. Es ist zugleich die Datei, in der beim Leeren zwei
+Patientendatensätze übersehen wurden.
 
-## Layouts je Datei
+## Berechnungsformeln
 
-| Datei | Layouts |
-|---|---|
-| `Stammdaten` | Patienten (Stammdaten) sh, Liste Befunde, Liste Patient, Status- Liste, Überblick Konzept, Stud. Kurs, Patienten (Abrechnung), Status- Liste sh, Patienten (Stammdaten) Kopie, Liste Patient sh |
-| `Befundblatt` | Befundblatt, Liste Patienten, Befundblatt neu, Befundblatt sh, Etiketten |
-| `Konzeptblatt` | Konzeptbatt sh, Liste Patienten, Konzeptbatt neu, Liste Patienten sh |
-| `Platzanalyse` | Platzanalyse, Liste, Platzanalyse sh |
-| `Bolton` | Liste, Bolton sh |
-| `paAnalyse` | PA- Analyse, PA- Analyse sh |
-| `toothsizeanalysis moyers` | tooth size analysis, Tabelle - Info, + `sh`-Varianten |
-| `Interim Finale` | Layout-#1, Interim sh |
+Vollständig im DDR enthalten, in deutscher Funktionssyntax (`Wenn`, `Falls`,
+`LiesAlsZahl`, `Runden`, `Hole`, `MusterAnzahl`). Beispiele:
 
-Fast jede Datei hat zu ihrem Hauptlayout ein zweites mit dem Suffix ` sh`.
-**Wofür `sh` steht, ist ungeklärt** — in den Dateien findet sich kein Hinweis
-darauf. Dasselbe Kürzel taucht auch auf Dateiebene auf (`Stammdaten_shr.fp7`
-im Konvertierungs-Log, Verzeichnis `2013_filemaker_shr_restliche_dokumente`),
-was gegen eine rein layoutbezogene Bedeutung spricht. Vor einer Umstrukturierung
-in der Praxis klären.
+```
+// Platzanalyse — Grösse des bleibenden Fünfers aus Milchfünfer-Messung
+grösse des fünfers = (milchfünfer im modell * fünfer im rö) / milchfünfer im rö
 
-## Fachliche Feldstruktur (Auszug)
+// Platzanalyse — Zahnbreitensumme, nur wenn alle Einzelwerte vorliegen
+Summe OK 6 = Wenn( LiesAlsZahl(z13)="" ODER … ; ""; z13+z12+z11+z21+z22+z23 )
 
-- **Stammdaten** (94 Bezeichner) — Falladministration und Workflow-Steuerung:
-  Behandlungsstand, Nächster Schritt, Nächster Termin, Unterlagen vollständig,
-  Staff geplant/gemacht, Instruktor definitiv, Konzept unterschrieben,
-  Zeigen des Falles am, Studenten-Kurs/Gruppenassistent, Abrechnung,
-  Behandlungskosten, Kategorie, Spez Fall.
-- **Befundblatt** (78) — klinische Befundung: MORPHOLOGISCH, FUNKTIONELL,
-  skelettal/dental, sag./transv., Profil, Primärkontakte, Abgleitbewegung,
-  Weichteile, Tonsillen/Adenoide/Atmung, WITS, H-Diff, Schädelbasis,
-  Hand-alter (mit Referenztabelle `accelerated`/`average`/`retarded`).
-- **Konzeptblatt** (83) — Behandlungsplanung: Phase, Verankerungsansprüche,
-  Hauptprobleme, Überlegungen, Therapie, Bilanz, Kostenvoranschlag,
-  Apparaturen-Textbausteine (Mono-HG, Lipbumper, StaBo, FDA, Ablösesect.),
-  MKG-Workflow.
-- **Platzanalyse / Bolton** (47/38) — Modellanalyse: Zahngrössen,
-  Vorhandener Platz, Bolton-Analyse, Referenzzahn, mesio-distale Differenz,
-  Kurvatur und Platzbilanz je Kiefer, Verfahren nach Ingervall/Müller/Moyers.
-- **paAnalyse** (28) — posteroanteriore Fernröntgenanalyse: facial/nasal/
-  maxillary/mandibular width, intermolar/intercanine width, occlusal plane tilt.
-- **toothsizeanalysis moyers** (26) — Zahnbreiten-Prognose nach
-  R. E. Moyers et al. 1976, geschlechtsgetrennt, mit Balkendarstellung.
+// toothsizeanalysis — geschlechtsabhängige Referenzwerte
+Pat mean OK1 = Wenn( Stammdaten::Geschlecht = "m" ; mean OK1 m ; mean OK1 w )
+```
 
-## Grenzen dieser Analyse
+**Wichtig für eine spätere API-Anbindung:** Berechnungen greifen teilweise über
+Dateigrenzen zu (`Stammdaten::Geschlecht`, `Konzeptblatt::off`). Die
+Zahnnomenklatur folgt dem FDI-Schema (`z13`, `z21`, `z46` …), was für eine
+strukturierte Neumodellierung entgegenkommt.
 
-- **Berechnungsformeln sind nicht auslesbar.** FileMaker speichert sie
-  tokenisiert mit Feld-IDs statt als Text; sie werden erst beim Anzeigen
-  zusammengesetzt. Für die Formeln führt kein Weg an FileMaker Pro vorbei.
-- **Beziehungsdefinitionen** (welches Tabellenvorkommen über welches Feldpaar
-  verknüpft ist) konnten nicht strukturiert extrahiert werden — belegt ist der
-  gemeinsame Schlüssel `KG Nr.` und welche Dateien einander referenzieren,
-  nicht die exakte Verknüpfungsbedingung je Beziehung.
-- Untersucht wurden die 8 Dateien des Satzes `Filemaker_Relevant`. Die übrigen
-  Dateien des Verbunds (kvBlatt, Photos, Termine, Behandlung, Etiketten,
-  Modelle, Röntgenbild, Reevaluation, die `Konzept 2`-/`Reevaluation`-Varianten,
-  `toothsizeanalysis seipel`) sind hier nur als Verweisziele belegt, nicht
-  selbst analysiert.
+## Konsequenzen für die Migration
+
+1. **Redundanz zuerst abbauen.** Von 29 Dateien sind mindestens 12 exakte
+   Duplikate. `ZWUL 1`/`ZWUL 2` und `Etiketten_sto` sind vermutlich vergessene
+   Arbeitskopien — vor dem Hosting klären, ob sie noch gebraucht werden.
+2. **Verweise bereinigen** — die 10 toten Referenzen und 3 kaputten Beziehungen.
+3. **Feldnamen vereinheitlichen** (`KG Nr` vs `KG nr`), sonst schleppt sich der
+   Fallstrick in jede Folgelösung.
+4. **Die Phasenvarianten sind keine Schemaunterschiede.** `Konzept 2` und
+   `Reevaluation` haben identische Feldsätze. In einer Neumodellierung ist das
+   ein Datensatzattribut „Phase", keine eigene Datei — das allein reduziert den
+   Verbund um rund die Hälfte.
+5. **`Interim Finale` gesondert behandeln** — andere Bauart, keine Anbindung,
+   und der bekannte Restbestand an Patientendaten.
+
+## Erhebungsstand
+
+29 Dateien mit vollständigem DDR. Nicht erfasst, weil beim Export nicht
+vorhanden: `Befundblatt Reevaluation`, `Platzanalyse Reevaluation` — beide
+werden von `Stammdaten` referenziert, existieren aber nicht (siehe Defekte).
